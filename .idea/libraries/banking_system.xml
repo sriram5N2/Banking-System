@@ -1,0 +1,14 @@
+<component name="libraryTable">
+  <library name="banking-system">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/notification-service.zip!/" />
+      <root url="jar://$PROJECT_DIR$/transaction-service.zip!/" />
+      <root url="jar://$PROJECT_DIR$/api-gateway.zip!/" />
+      <root url="jar://$PROJECT_DIR$/fraud-detection-service.zip!/" />
+      <root url="jar://$PROJECT_DIR$/account-service.zip!/" />
+      <root url="jar://$PROJECT_DIR$/payment-service.zip!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>
