@@ -6,12 +6,16 @@ import com.bankingsystem.transactionservice.dto.TransferRequest;
 import com.bankingsystem.transactionservice.entity.Transaction;
 import com.bankingsystem.transactionservice.entity.TransactionStatus;
 import com.bankingsystem.transactionservice.entity.TransactionType;
+import com.bankingsystem.transactionservice.event.TransactionInitiatedEvent;
 import com.bankingsystem.transactionservice.repository.TransactionRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -19,7 +23,7 @@ import java.util.UUID;
 public class TransactionService  {
     private final TransactionRepository transactionRepository;
     private final AccountServiceClient accountServiceClient;
-
+   private final KafkaTemplate<String, Object> kafkaTemplate;
     private static final String Transaction_INITIATED_TOPIC="transaction_initiated";
     private static final String Transaction_COMPLETED_TOPIC_2="transaction_completed";
     private static final String Transaction_REFUNDED_TOPIC="transaction_refunded";
@@ -51,8 +55,55 @@ public class TransactionService  {
         Transaction savedTransaction = transactionRepository.save(transaction);
 
         log.info("Transaction saved as Processing:{}",savedTransaction.getTransactionId());
+        TransactionInitiatedEvent event=new TransactionInitiatedEvent();
+        event.setTransactionId(savedTransaction.getTransactionId());
+        event.setSenderAccountNumber(savedTransaction.getSenderAccountNumber());
+        event.setReceiverAccountNumber(savedTransaction.getReceiverAccountNumber());
+        event.setAmount(savedTransaction.getAmount());
+        event.setDescription(savedTransaction.getDescription());
 
+        kafkaTemplate.send(Transaction_INITIATED_TOPIC,savedTransaction.getTransactionId(),event);
+        log.info("Transaction saved as Initiated:{}",savedTransaction.getTransactionId());
+
+        return maptoResponse(savedTransaction);
     }
+
+    public TransactionResponse getTransaction(String transactionId)
+    {
+        return maptoResponse(transactionRepository.findById(transactionId).orElseThrow(()-> new RuntimeException("Transaction not found:"+transactionId)));
+    }
+
+    public List<TransactionResponse> getTransactionHistory(String accountNumber)
+    {
+        return transactionRepository.findBySenderAccountNumberOrderByCreatedAtDesc(accountNumber)
+                .stream()
+                .map(this::maptoResponse)
+                .collect(Collectors.toList());
+    }
+
+
+
+
+
+
+    private TransactionResponse maptoResponse(Transaction savedTransaction)
+    {
+        TransactionResponse response = new TransactionResponse();
+        response.setTransactionId(savedTransaction.getTransactionId());
+        response.setSenderAccountNumber(savedTransaction.getSenderAccountNumber());
+        response.setAmount(savedTransaction.getAmount());
+        response.setDescription(savedTransaction.getDescription());
+        response.setRefernceNumber(savedTransaction.getRefernceNumber());
+        response.setStatus(savedTransaction.getStatus());
+        response.setType(savedTransaction.getType());
+        response.setFailureResaon(savedTransaction.getFailureResaon());
+        response.setReceiverAccountNumber(savedTransaction.getReceiverAccountNumber());
+        response.setCompletionDate(savedTransaction.getCompletionDate());
+        response.setTransactionDate(savedTransaction.getTransactionDate());
+        return response;
+    }
+
+
 
 
 
