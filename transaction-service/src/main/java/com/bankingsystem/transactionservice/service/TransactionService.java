@@ -6,6 +6,7 @@ import com.bankingsystem.transactionservice.dto.TransferRequest;
 import com.bankingsystem.transactionservice.entity.Transaction;
 import com.bankingsystem.transactionservice.entity.TransactionStatus;
 import com.bankingsystem.transactionservice.entity.TransactionType;
+import com.bankingsystem.transactionservice.event.TransactionCompletedEvent;
 import com.bankingsystem.transactionservice.event.TransactionInitiatedEvent;
 import com.bankingsystem.transactionservice.repository.TransactionRepository;
 import lombok.RequiredArgsConstructor;
@@ -14,6 +15,8 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -29,9 +32,9 @@ public class TransactionService  {
    private final KafkaTemplate<String, Object> kafkaTemplate;
    private final RedisTemplate<String, String> redisTemplate;
     private static final String Transaction_INITIATED_TOPIC="transaction_initiated";
-    private static final String Transaction_COMPLETED_TOPIC_2="transaction_completed";
+    private static final String Transaction_COMPLETED_TOPIC="transaction_completed";
     private static final String Transaction_REFUNDED_TOPIC="transaction_refunded";
-
+   private static final String FRAUD_DETECTED="fraud.detected";
     /**
      * SAGA STEP 1
      * Deducts from sender via feign
@@ -105,6 +108,39 @@ public class TransactionService  {
 
 
     }
+    private void blockAccountAndCompensate(Transaction transaction,String reason)
+    {
+        Map<String,Object> fraudEvent = new HashMap<>();
+
+        fraudEvent.put("transactionId",transaction.getTransactionId());
+        fraudEvent.put("senderAccountNumber",transaction.getSenderAccountNumber());
+        fraudEvent.put("reason",reason);
+
+        kafkaTemplate.send(FRAUD_DETECTED,transaction.getSenderAccountNumber(),fraudEvent);
+        log.warn("Fraud.detected published-account:{} will be blocked",transaction.getSenderAccountNumber());
+
+        // SAGA COMPENSATION - refind sender
+        compensateTransaction(transaction,reason);
+
+
+    }
+
+    private void  completeTransaction(Transaction transaction)
+    {
+        transaction.setStatus(TransactionStatus.COMPLETED);
+        transaction.setCompletionDate(LocalDateTime.now());
+        transactionRepository.save(transaction);
+        TransactionCompletedEvent  event = new TransactionCompletedEvent();
+        event.setTransactionId(transaction.getTransactionId());
+        event.setSenderAccountNumber(transaction.getSenderAccountNumber());
+        event.setReceiverAccountNumber(transaction.getReceiverAccountNumber());
+        event.setAmount(transaction.getAmount());
+        event.setDescription(transaction.getDescription());
+        kafkaTemplate.send(Transaction_COMPLETED_TOPIC,transaction.getTransactionId(),event);
+        log.info("Transaction saved as Completed:{}",transaction.getTransactionId());
+        // SAGA COMPLETED
+
+    }
     private void compensateTransaction(Transaction transaction,String message)
     {
         log.warn("SAGA COMPENSATION - REFUNDING: {} AMOUNT: {}",
@@ -126,7 +162,23 @@ public class TransactionService  {
          kafkaTemplate.send(Transaction_REFUNDED_TOPIC,refundEvent);
 
          log.info("SAGA COMPENSATION COMPLETED - REFUNDED AMOUNT TO  ",transaction.getAmount(),transaction.getSenderAccountNumber());
-         
+
+    }
+
+    public void processCleanResult(String transactionId)
+    {
+        Transaction transaction = transactionRepository.findById(transactionId).orElseThrow(()-> new RuntimeException("Transaction not found"+ transactionId));
+        if(transaction.getStatus()!= TransactionStatus.PROCESSING)
+        {
+            log.warn("Transaction {} not PROCESSING - skipping", transactionId);
+            return;
+
+        }
+
+        completeTransaction(transaction);
+        
+
+
     }
 
     public TransactionResponse getTransaction(String transactionId)
