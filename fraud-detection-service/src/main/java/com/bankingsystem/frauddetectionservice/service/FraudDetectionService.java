@@ -25,6 +25,9 @@ public class FraudDetectionService {
     private int maxTransactionsPerMinute;
     @Value("${fraud.suspicious-amount-multiplier}")
     private double suspiciousAmountMultiplier;
+
+    @Value("${fraud.max-balance-percentage}")
+    private double maxBalancePercentage;
     private static final String VERIFICATION_REQUIRED_TOPIC="verification.required";
     private static final String FRAUD_CHECK_CLEAN_RESULT_TOPIC="Fraud.check.clean";
 
@@ -84,6 +87,17 @@ public class FraudDetectionService {
             return new FraudCheckResult(false,"Transaction exceed 90% of account Balance");
 
         return new FraudCheckResult(false,null);
+
+    }
+
+    private boolean isBalanceCheckFailed(BigDecimal senderBalance,BigDecimal amount)
+    {
+        BigDecimal maxAllowed= senderBalance.multiply(BigDecimal.valueOf(maxBalancePercentage));
+        log.info("Balance Check - amount :{} maxAllowed : {} suspicious: {}",
+                amount,maxAllowed,amount.compareTo(senderBalance) > 0);
+
+      return amount.compareTo(senderBalance) > 0;
+
 
     }
 

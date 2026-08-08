@@ -10,10 +10,13 @@ import com.bankingsystem.transactionservice.event.TransactionInitiatedEvent;
 import com.bankingsystem.transactionservice.repository.TransactionRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -24,6 +27,7 @@ public class TransactionService  {
     private final TransactionRepository transactionRepository;
     private final AccountServiceClient accountServiceClient;
    private final KafkaTemplate<String, Object> kafkaTemplate;
+   private final RedisTemplate<String, String> redisTemplate;
     private static final String Transaction_INITIATED_TOPIC="transaction_initiated";
     private static final String Transaction_COMPLETED_TOPIC_2="transaction_completed";
     private static final String Transaction_REFUNDED_TOPIC="transaction_refunded";
@@ -66,6 +70,63 @@ public class TransactionService  {
         log.info("Transaction saved as Initiated:{}",savedTransaction.getTransactionId());
 
         return maptoResponse(savedTransaction);
+    }
+
+    public TransactionResponse verifyOTP(String transactionId,String otp)
+    {
+        log.info("OTP verification for the transaction : {}",transactionId);
+
+        Transaction transaction = transactionRepository.findById(transactionId).orElseThrow(()-> new RuntimeException("Transaction not found"+ transactionId));
+
+        String otpKey = "verification:otp" + transactionId;
+        String storedOtp = redisTemplate.opsForValue().get(otpKey);
+
+        if(storedOtp==null)
+        {
+            log.warn("OTP expired for the transaction : {}",transactionId);
+            compensateTransaction(transaction,"OTP expirred - transaction cancelled and amount refunded");
+
+            return maptoResponse(transaction);
+
+        }
+        if(!storedOtp.equals(otp))
+        {
+            log.warn("Wrong OTP - blocking the account and refunding the amount:{}",transactionId);
+            redisTemplate.delete(otpKey);
+            blockAccountAndCompensate(transaction,"Wrong OTP entered - transaction cancelled, "+
+                    "account blocked for security");
+            return maptoResponse(transaction);
+        }
+
+        log.info("OTP verified successfully for the transaction : {}",transactionId);
+        redisTemplate.delete(otpKey);
+        completeTransaction(transaction);
+        return maptoResponse(transaction);
+
+
+    }
+    private void compensateTransaction(Transaction transaction,String message)
+    {
+        log.warn("SAGA COMPENSATION - REFUNDING: {} AMOUNT: {}",
+                transaction.getAmount(),transaction.getSenderAccountNumber());
+
+
+        accountServiceClient.creditBalance(transaction.getSenderAccountNumber(),transaction.getAmount());
+        transaction.setStatus(TransactionStatus.FLAGGED);
+        transaction.setFailureResaon(message+"- SAGA Compensation executed");
+        transactionRepository.save(transaction);
+
+        Map<String,Object> refundEvent = new HashMap<>();
+
+        refundEvent.put("transactionId",transaction.getTransactionId());
+        refundEvent.put("senderAccountNumber",transaction.getSenderAccountNumber());
+        refundEvent.put("amount",transaction.getAmount());
+         refundEvent.put("reason",message);
+
+         kafkaTemplate.send(Transaction_REFUNDED_TOPIC,refundEvent);
+
+         log.info("SAGA COMPENSATION COMPLETED - REFUNDED AMOUNT TO  ",transaction.getAmount(),transaction.getSenderAccountNumber());
+         
     }
 
     public TransactionResponse getTransaction(String transactionId)
