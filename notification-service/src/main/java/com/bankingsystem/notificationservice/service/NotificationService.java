@@ -128,6 +128,10 @@ public class NotificationService {
     }
 
     private void sendAlert(String accountNumber,String subject, String message){
-       
+       log.info("---------------------------");
+       log.info("Account: {}", accountNumber);
+       log.info("Subject: {}", subject);
+       log.info("Message: {}", message);
+       log.info("-----------------------");
     }
 }
