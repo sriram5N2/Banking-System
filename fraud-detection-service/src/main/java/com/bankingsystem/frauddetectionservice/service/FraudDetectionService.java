@@ -5,6 +5,7 @@ import com.bankingsystem.frauddetectionservice.model.FraudCheckResult;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 
@@ -21,6 +22,7 @@ public class FraudDetectionService {
 
     private final AccountServiceClient accountServiceClient;
     private final KafkaTemplate<String,Object> kafkaTemplate;
+    private final StringRedisTemplate redisTemplate;
     @Value("${fraud.max-transactions-per-minute}")
     private int maxTransactionsPerMinute;
     @Value("${fraud.suspicious-amount-multiplier}")
@@ -83,7 +85,7 @@ public class FraudDetectionService {
             return new FraudCheckResult(true,"unusual transaction amount"+"exceeds your average");
         }
 
-        if(senderBalance.compareTo(BigDecimal.ZERO) > 0 && isBalanceCheckFailed(SenderBalance, amount))
+        if(senderBalance.compareTo(BigDecimal.ZERO) > 0 && isBalanceCheckFailed(senderBalance, amount))
             return new FraudCheckResult(false,"Transaction exceed 90% of account Balance");
 
         return new FraudCheckResult(false,null);
@@ -132,7 +134,7 @@ public class FraudDetectionService {
 
         BigDecimal newAvg= avgAmount.add(amount).
                 divide(BigDecimal.valueOf(2),2, RoundingMode.HALF_UP);
-        redisTemplate.opsForValue().set(avgKey,newAvg,newAvg.toString());
+        redisTemplate.opsForValue().set(avgKey,newAvg.toString());
 
         log.info("Amount Check - amount: {} threshold: {} suspicious: {}",amount,threshold,amount.compareTo(threshold)>0);
 

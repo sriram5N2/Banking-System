@@ -84,17 +84,7 @@ public class PaymentService {
     }
 
     // Pass signature and raw body from controller for verification
-    public void handleWebhook(Map<String, Object> payload, String rawResponseBody, String razorpaySignature) {
-
-        // FIX 4: Verify Webhook Signature for security
-        try {
-            if (razorpaySignature != null && webhookSecret != null) {
-                Utils.verifyWebhookSignature(rawResponseBody, razorpaySignature, webhookSecret);
-            }
-        } catch (RazorpayException e) {
-            log.error("Invalid Razorpay Webhook Signature", e);
-            throw new RuntimeException("Invalid webhook signature");
-        }
+    public void handleWebhook(Map<String, Object> payload) {
 
         log.info("Received Razorpay webhook: {}", payload.get("event"));
         String event = (String) payload.get("event");

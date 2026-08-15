@@ -45,7 +45,7 @@ public class AccountController {
         return ResponseEntity.ok("Account Blocked Successfully");
     }
 
-    @PutMapping("/{accountNumber}/deductbalance")
+    @PutMapping("/{accountNumber}/deduct")
     public ResponseEntity<String> deductBalance(@PathVariable String accountNumber,@RequestParam BigDecimal amount)
     {
         accountService.deductBalance(accountNumber,amount);

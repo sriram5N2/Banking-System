@@ -31,9 +31,9 @@ public class TransactionService  {
     private final AccountServiceClient accountServiceClient;
    private final KafkaTemplate<String, Object> kafkaTemplate;
    private final RedisTemplate<String, String> redisTemplate;
-    private static final String Transaction_INITIATED_TOPIC="transaction_initiated";
-    private static final String Transaction_COMPLETED_TOPIC="transaction_completed";
-    private static final String Transaction_REFUNDED_TOPIC="transaction_refunded";
+    private static final String Transaction_INITIATED_TOPIC="transaction-initiated";
+    private static final String Transaction_COMPLETED_TOPIC="transaction-completed";
+    private static final String Transaction_REFUNDED_TOPIC="transaction-refunded";
    private static final String FRAUD_DETECTED="fraud.detected";
     /**
      * SAGA STEP 1
@@ -161,7 +161,7 @@ public class TransactionService  {
 
          kafkaTemplate.send(Transaction_REFUNDED_TOPIC,refundEvent);
 
-         log.info("SAGA COMPENSATION COMPLETED - REFUNDED AMOUNT TO  ",transaction.getAmount(),transaction.getSenderAccountNumber());
+         log.info("SAGA COMPENSATION COMPLETED - REFUNDED AMOUNT TO ",transaction.getAmount(),transaction.getSenderAccountNumber());
 
     }
 
@@ -188,7 +188,7 @@ public class TransactionService  {
 
     public List<TransactionResponse> getTransactionHistory(String accountNumber)
     {
-        return transactionRepository.findBySenderAccountNumberOrderByCreatedAtDesc(accountNumber)
+        return transactionRepository.findBySenderAccountNumberOrderByTransactionDateDesc(accountNumber)
                 .stream()
                 .map(this::maptoResponse)
                 .collect(Collectors.toList());
